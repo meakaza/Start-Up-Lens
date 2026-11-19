@@ -1,0 +1,6 @@
+{
+  "name": "Cafe Lab Audit",
+  "description": "Sistem audit dan penilaian operasional harian Cafe and Restaurant Business (MAN1106508) periode 3 bulan (September–Januari) dengan analisis varians kas, ticket time, kitchen waste, Google Sheets, Google Calendar, dan AI Audit Intelligence.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
