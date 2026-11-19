@@ -1,13 +1,16 @@
 import React, { useMemo, useState } from 'react';
-import { motion } from 'motion/react';
+import { AnimatePresence, motion } from 'motion/react';
 import {
+  AlertTriangle,
   CalendarPlus,
   Edit3,
   Eye,
   History,
   Lock,
+  LogIn,
   Printer,
   Search,
+  Trash2,
   Unlock,
   X,
 } from 'lucide-react';
@@ -31,9 +34,11 @@ export function HistoryView({
   selectedSessionForModal,
   onSelectSessionForModal,
   onEditSession,
+  onDeleteSession,
   onUnlockSession,
   onSyncSessionToCalendar,
   onPrintSession,
+  onRequestLogin,
   workspaceConnected,
 }: {
   sessions: AuditSession[];
@@ -42,15 +47,18 @@ export function HistoryView({
   selectedSessionForModal: AuditSession | null;
   onSelectSessionForModal: (session: AuditSession | null) => void;
   onEditSession: (session: AuditSession) => void;
+  onDeleteSession: (sessionId: string) => void;
   onUnlockSession: (sessionId: string) => void;
   onSyncSessionToCalendar: (session: AuditSession) => void;
   onPrintSession: (session: AuditSession) => void;
+  onRequestLogin?: () => void;
   workspaceConnected: boolean;
 }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [localMonth, setLocalMonth] = useState<AcademicMonth | 'Semua'>(monthFilter);
   const [statusFilter, setStatusFilter] = useState<SessionStatus | 'Semua'>('Semua');
   const [cashFilter, setCashFilter] = useState<'Semua' | 'Sesuai' | 'Selisih'>('Semua');
+  const [deleteTarget, setDeleteTarget] = useState<AuditSession | null>(null);
 
   const filtered = useMemo(() => {
     const activeMonth = localMonth;
@@ -94,6 +102,16 @@ export function HistoryView({
               perubahan tercatat
             </p>
           </div>
+          {role !== 'dosen' && onRequestLogin && (
+            <button
+              type="button"
+              onClick={onRequestLogin}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50/85 px-3 py-1.5 text-xs font-semibold text-emerald-800 hover:bg-emerald-100 transition-colors whitespace-nowrap"
+            >
+              <LogIn className="w-3.5 h-3.5" />
+              <span>Login Dosen untuk Edit / Hapus</span>
+            </button>
+          )}
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
@@ -169,118 +187,136 @@ export function HistoryView({
                   </td>
                 </tr>
               ) : (
-                filtered.map((session) => {
-                  const isHoliday = session.sessionStatus === 'Libur / Tidak Beroperasi';
-                  const waste = formatWaste(session.kitchenWasteGrams);
-                  return (
-                    <tr
-                      key={session.id}
-                      className="hover:bg-blue-50/40 transition-colors"
-                    >
-                      <td className="py-3 px-4">
-                        <div className="font-semibold text-slate-900 font-mono-num">
-                          {session.day}, {session.date}
-                        </div>
-                        <div className="text-slate-500 mt-0.5">
-                          {session.month} · {session.shiftManager}
-                          {session.editHistory.length > 0 && (
-                            <span className="text-blue-700 font-medium">
-                              {' '}
-                              · {session.editHistory.length}x diedit
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="py-3 px-4">
-                        <span
-                          className={`font-medium ${
+                <AnimatePresence initial={false}>
+                  {filtered.map((session) => {
+                    const isHoliday = session.sessionStatus === 'Libur / Tidak Beroperasi';
+                    const waste = formatWaste(session.kitchenWasteGrams);
+                    return (
+                      <motion.tr
+                        key={session.id}
+                        layout="position"
+                        initial={{ opacity: 0, y: 6 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, x: -12 }}
+                        transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
+                        className="hover:bg-blue-50/40 transition-colors"
+                      >
+                        <td className="py-3 px-4">
+                          <div className="font-semibold text-slate-900 font-mono-num">
+                            {session.day}, {session.date}
+                          </div>
+                          <div className="text-slate-500 mt-0.5">
+                            {session.month} · {session.shiftManager}
+                            {session.editHistory.length > 0 && (
+                              <span className="text-blue-700 font-medium">
+                                {' '}
+                                · {session.editHistory.length}x diedit
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="py-3 px-4">
+                          <span
+                            className={`font-medium ${
+                              isHoliday
+                                ? 'text-slate-500'
+                                : session.isPosTransition
+                                ? 'text-amber-700'
+                                : 'text-emerald-700'
+                            }`}
+                          >
+                            {session.sessionStatus}
+                          </span>
+                          <div className="text-[11px] text-slate-500 mt-0.5 flex items-center gap-1">
+                            {session.isLocked ? (
+                              <>
+                                <Lock className="w-3 h-3 text-slate-400" />
+                                <span>Terkunci</span>
+                              </>
+                            ) : (
+                              <>
+                                <Unlock className="w-3 h-3 text-blue-600" />
+                                <span>Terbuka</span>
+                              </>
+                            )}
+                          </div>
+                        </td>
+                        <td className="py-3 px-4 text-right font-mono-num font-bold text-slate-900">
+                          {isHoliday ? '-' : session.weightedScore.toFixed(1)}
+                        </td>
+                        <td className="py-3 px-4 text-right font-mono-num text-slate-800">
+                          {isHoliday ? '-' : formatIdr(session.totalRevenueIdr)}
+                        </td>
+                        <td
+                          className={`py-3 px-4 text-right font-mono-num font-medium ${
                             isHoliday
-                              ? 'text-slate-500'
-                              : session.isPosTransition
-                              ? 'text-amber-700'
-                              : 'text-emerald-700'
+                              ? 'text-slate-400'
+                              : session.cashVarianceIdr === 0
+                              ? 'text-emerald-700'
+                              : 'text-rose-700'
                           }`}
                         >
-                          {session.sessionStatus}
-                        </span>
-                        <div className="text-[11px] text-slate-500 mt-0.5 flex items-center gap-1">
-                          {session.isLocked ? (
-                            <>
-                              <Lock className="w-3 h-3 text-slate-400" />
-                              <span>Terkunci</span>
-                            </>
-                          ) : (
-                            <>
-                              <Unlock className="w-3 h-3 text-blue-600" />
-                              <span>Terbuka</span>
-                            </>
-                          )}
-                        </div>
-                      </td>
-                      <td className="py-3 px-4 text-right font-mono-num font-bold text-slate-900">
-                        {isHoliday ? '-' : session.weightedScore.toFixed(1)}
-                      </td>
-                      <td className="py-3 px-4 text-right font-mono-num text-slate-800">
-                        {isHoliday ? '-' : formatIdr(session.totalRevenueIdr)}
-                      </td>
-                      <td
-                        className={`py-3 px-4 text-right font-mono-num font-medium ${
-                          isHoliday
-                            ? 'text-slate-400'
-                            : session.cashVarianceIdr === 0
-                            ? 'text-emerald-700'
-                            : 'text-rose-700'
-                        }`}
-                      >
-                        {isHoliday ? '-' : formatCashVariance(session.cashVarianceIdr)}
-                      </td>
-                      <td className="py-3 px-4 text-right font-mono-num text-slate-700">
-                        {isHoliday ? '-' : `${waste.kgText}`}
-                      </td>
-                      <td className="py-3 px-4 text-right">
-                        <div className="inline-flex items-center justify-end gap-1.5">
-                          <button
-                            type="button"
-                            onClick={() => onSelectSessionForModal(session)}
-                            className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 whitespace-nowrap"
-                          >
-                            <Eye className="w-3.5 h-3.5" />
-                            Detail
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => onPrintSession(session)}
-                            title="Cetak Laporan Audit (PDF)"
-                            className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50/70 px-2.5 py-1.5 text-xs font-medium text-emerald-800 hover:bg-emerald-100 whitespace-nowrap"
-                          >
-                            <Printer className="w-3.5 h-3.5" />
-                            PDF
-                          </button>
-                          {role === 'dosen' && (
+                          {isHoliday ? '-' : formatCashVariance(session.cashVarianceIdr)}
+                        </td>
+                        <td className="py-3 px-4 text-right font-mono-num text-slate-700">
+                          {isHoliday ? '-' : `${waste.kgText}`}
+                        </td>
+                        <td className="py-3 px-4 text-right">
+                          <div className="inline-flex items-center justify-end gap-1.5">
                             <button
                               type="button"
-                              onClick={() => onEditSession(session)}
-                              className="inline-flex items-center gap-1 rounded-lg bg-blue-700 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-blue-800 whitespace-nowrap"
+                              onClick={() => onSelectSessionForModal(session)}
+                              className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 whitespace-nowrap"
                             >
-                              <Edit3 className="w-3.5 h-3.5" />
-                              Edit
+                              <Eye className="w-3.5 h-3.5" />
+                              Detail
                             </button>
-                          )}
-                          {workspaceConnected && (
                             <button
                               type="button"
-                              onClick={() => onSyncSessionToCalendar(session)}
-                              title="Simpan ke Google Calendar"
-                              className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-700 hover:bg-slate-50"
+                              onClick={() => onPrintSession(session)}
+                              title="Cetak Laporan Audit (PDF)"
+                              className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50/70 px-2.5 py-1.5 text-xs font-medium text-emerald-800 hover:bg-emerald-100 whitespace-nowrap"
                             >
-                              <CalendarPlus className="w-3.5 h-3.5 text-blue-700" />
+                              <Printer className="w-3.5 h-3.5" />
+                              PDF
                             </button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })
+                            {role === 'dosen' && (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => onEditSession(session)}
+                                  className="inline-flex items-center gap-1 rounded-lg bg-blue-700 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-blue-800 whitespace-nowrap"
+                                >
+                                  <Edit3 className="w-3.5 h-3.5" />
+                                  Edit
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setDeleteTarget(session)}
+                                  title="Hapus Riwayat Penilaian"
+                                  className="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-rose-50/85 px-2.5 py-1.5 text-xs font-medium text-rose-700 hover:bg-rose-100 whitespace-nowrap"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                  Hapus
+                                </button>
+                              </>
+                            )}
+                            {workspaceConnected && (
+                              <button
+                                type="button"
+                                onClick={() => onSyncSessionToCalendar(session)}
+                                title="Simpan ke Google Calendar"
+                                className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-700 hover:bg-slate-50"
+                              >
+                                <CalendarPlus className="w-3.5 h-3.5 text-blue-700" />
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </motion.tr>
+                    );
+                  })}
+                </AnimatePresence>
               )}
             </tbody>
           </table>
@@ -473,56 +509,166 @@ export function HistoryView({
             </div>
 
             {/* Modal Footer Actions */}
-            <div className="flex flex-wrap items-center justify-end gap-3 pt-2 border-t border-slate-200/80">
-              {role === 'dosen' && selectedSessionForModal.isLocked && (
+            <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-slate-200/80">
+              <div>
+                {role === 'dosen' && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const target = selectedSessionForModal;
+                      onSelectSessionForModal(null);
+                      setDeleteTarget(target);
+                    }}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50 px-3.5 py-2 text-xs font-semibold text-rose-700 hover:bg-rose-100 whitespace-nowrap"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    Hapus Riwayat Ini
+                  </button>
+                )}
+              </div>
+
+              <div className="flex flex-wrap items-center justify-end gap-2.5">
+                {role === 'dosen' && selectedSessionForModal.isLocked && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onUnlockSession(selectedSessionForModal.id);
+                      onSelectSessionForModal({
+                        ...selectedSessionForModal,
+                        isLocked: false,
+                      });
+                    }}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-3.5 py-2 text-xs font-semibold text-amber-800 hover:bg-amber-100 whitespace-nowrap"
+                  >
+                    <Unlock className="w-3.5 h-3.5" />
+                    Buka Kunci Sesi
+                  </button>
+                )}
+                {role === 'dosen' && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const target = selectedSessionForModal;
+                      onSelectSessionForModal(null);
+                      onEditSession(target);
+                    }}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-blue-700 px-4 py-2 text-xs font-semibold text-white hover:bg-blue-800 whitespace-nowrap"
+                  >
+                    <Edit3 className="w-3.5 h-3.5" />
+                    Edit Lembar Observasi
+                  </button>
+                )}
                 <button
                   type="button"
-                  onClick={() => {
-                    onUnlockSession(selectedSessionForModal.id);
-                    onSelectSessionForModal({
-                      ...selectedSessionForModal,
-                      isLocked: false,
-                    });
-                  }}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-3.5 py-2 text-xs font-semibold text-amber-800 hover:bg-amber-100 whitespace-nowrap"
+                  onClick={() => onPrintSession(selectedSessionForModal)}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50 px-3.5 py-2 text-xs font-semibold text-emerald-800 hover:bg-emerald-100 whitespace-nowrap"
                 >
-                  <Unlock className="w-3.5 h-3.5" />
-                  Buka Kunci Sesi
+                  <Printer className="w-3.5 h-3.5" />
+                  Cetak Laporan Audit (PDF)
                 </button>
-              )}
-              {role === 'dosen' && (
                 <button
                   type="button"
-                  onClick={() => {
-                    const target = selectedSessionForModal;
-                    onSelectSessionForModal(null);
-                    onEditSession(target);
-                  }}
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-blue-700 px-4 py-2 text-xs font-semibold text-white hover:bg-blue-800 whitespace-nowrap"
+                  onClick={() => onSelectSessionForModal(null)}
+                  className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 whitespace-nowrap"
                 >
-                  <Edit3 className="w-3.5 h-3.5" />
-                  Edit Lembar Observasi
+                  Tutup
                 </button>
-              )}
-              <button
-                type="button"
-                onClick={() => onPrintSession(selectedSessionForModal)}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50 px-3.5 py-2 text-xs font-semibold text-emerald-800 hover:bg-emerald-100 whitespace-nowrap"
-              >
-                <Printer className="w-3.5 h-3.5" />
-                Cetak Laporan Audit (PDF)
-              </button>
-              <button
-                type="button"
-                onClick={() => onSelectSessionForModal(null)}
-                className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 whitespace-nowrap"
-              >
-                Tutup
-              </button>
+              </div>
             </div>
           </motion.div>
         </div>
       )}
+
+      {/* In-App Delete Confirmation Dialog */}
+      <AnimatePresence>
+        {deleteTarget && (
+          <div
+            className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/45 backdrop-blur-sm p-4"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="delete-session-title"
+          >
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0"
+              onClick={() => setDeleteTarget(null)}
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.96, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.96, y: 8 }}
+              transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
+              className="relative z-10 w-full max-w-md rounded-2xl border border-slate-200 bg-white/95 backdrop-blur-xl shadow-2xl p-6 space-y-4"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-rose-50 text-rose-700 border border-rose-200 shrink-0">
+                    <AlertTriangle className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 id="delete-session-title" className="text-base font-semibold text-slate-900">
+                      Hapus Riwayat Penilaian?
+                    </h3>
+                    <p className="text-xs text-slate-500">
+                      {deleteTarget.day}, {deleteTarget.date} · {deleteTarget.month}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setDeleteTarget(null)}
+                  className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-3.5 text-xs text-slate-700 space-y-1">
+                <p>
+                  Shift Manager: <strong className="text-slate-900">{deleteTarget.shiftManager}</strong>
+                </p>
+                <p>
+                  Skor Tertimbang:{' '}
+                  <strong className="font-mono-num text-slate-900">
+                    {deleteTarget.sessionStatus === 'Libur / Tidak Beroperasi'
+                      ? 'Libur'
+                      : `${deleteTarget.weightedScore.toFixed(1)} / 100`}
+                  </strong>
+                </p>
+              </div>
+
+              <p className="text-xs text-slate-600 leading-relaxed">
+                Sesi penilaian ini akan dihapus permanen beserta tindak lanjut terkait, dan akumulasi
+                skor dashboard akan dihitung ulang secara otomatis.
+              </p>
+
+              <div className="flex items-center justify-end gap-2.5 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setDeleteTarget(null)}
+                  className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 whitespace-nowrap"
+                >
+                  Batal
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const idToDelete = deleteTarget.id;
+                    setDeleteTarget(null);
+                    onDeleteSession(idToDelete);
+                  }}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-rose-700 px-4 py-2 text-xs font-semibold text-white hover:bg-rose-800 whitespace-nowrap"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  Ya, Hapus Sesi
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

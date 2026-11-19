@@ -38,6 +38,7 @@ export function DosenLoginModal({
   isOpen,
   authLoading,
   initialEmail = '',
+  initialName = '',
   onClose,
   onLoginWithEmail,
   onLoginWithGoogle,
@@ -45,23 +46,25 @@ export function DosenLoginModal({
   isOpen: boolean;
   authLoading: boolean;
   initialEmail?: string;
+  initialName?: string;
   onClose: () => void;
   onLoginWithEmail: (email: string, displayName: string) => void;
   onLoginWithGoogle: (loginHintEmail?: string) => Promise<void>;
 }) {
   const [email, setEmail] = useState(initialEmail);
-  const [displayName, setDisplayName] = useState('');
+  const [displayName, setDisplayName] = useState(initialName);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const emailInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     if (isOpen) {
       setEmail(initialEmail);
+      setDisplayName(initialName);
       setErrorMsg(null);
       const timer = setTimeout(() => emailInputRef.current?.focus(), 60);
       return () => clearTimeout(timer);
     }
-  }, [isOpen, initialEmail]);
+  }, [isOpen, initialEmail, initialName]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -98,14 +101,21 @@ export function DosenLoginModal({
       return;
     }
     setErrorMsg(null);
-    await onLoginWithGoogle(trimmed || undefined);
+    try {
+      await onLoginWithGoogle(trimmed || undefined);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Login Google gagal.';
+      setErrorMsg(
+        `${msg} Jika popup diblokir browser, Anda dapat langsung login memakai form Email Dosen di atas.`
+      );
+    }
   };
 
   return (
     <AnimatePresence>
       {isOpen && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4"
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/45 backdrop-blur-sm p-4"
           role="dialog"
           aria-modal="true"
           aria-labelledby="dosen-login-title"

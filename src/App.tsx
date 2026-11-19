@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, LayoutGroup, motion } from 'motion/react';
 import {
   Activity,
@@ -57,11 +57,15 @@ import {
   WorkspaceConfirmModal,
   type WorkspaceConfirmState,
 } from './components/GlassPrimitives';
-
-const STORAGE_SESSIONS_KEY = 'cafelab_audit_sessions_v2';
-const STORAGE_ACTIONS_KEY = 'cafelab_audit_actions_v2';
-const STORAGE_SCHEME_KEY = 'cafelab_grading_scheme_v1';
-const STORAGE_DOSEN_KEY = 'cafelab_dosen_account_v1';
+import {
+  STORAGE_ACTIONS_KEY,
+  STORAGE_DOSEN_KEY,
+  STORAGE_SCHEME_KEY,
+  STORAGE_SESSIONS_KEY,
+  loadAllPersistedState,
+  readLocalStorageJson,
+  savePersistedKey,
+} from './services/auditStorage';
 
 interface ToastBanner {
   id: number;
@@ -76,101 +80,82 @@ export default function App() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const [dosenAccount, setDosenAccount] = useState<DosenAccount | null>(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_DOSEN_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw) as DosenAccount;
-        if (parsed?.email) return parsed;
-      }
-    } catch {
-      // Ignore storage read errors
-    }
-    return null;
+    const parsed = readLocalStorageJson<DosenAccount>(STORAGE_DOSEN_KEY);
+    return parsed?.email ? parsed : null;
   });
   const [loginModalOpen, setLoginModalOpen] = useState(false);
 
   const [role, setRole] = useState<UserRole>(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_DOSEN_KEY);
-      if (raw && JSON.parse(raw)?.email) return 'dosen';
-    } catch {
-      // Ignore
-    }
-    return 'mahasiswa';
+    const parsed = readLocalStorageJson<DosenAccount>(STORAGE_DOSEN_KEY);
+    return parsed?.email ? 'dosen' : 'mahasiswa';
   });
   const [monthFilter, setMonthFilter] = useState<AcademicMonth | 'Semua'>('Semua');
 
-  // Persistent Audit State
+  // Persistent Audit State (hydrated immediately from localStorage, then upgraded from IndexedDB if available)
   const [sessions, setSessions] = useState<AuditSession[]>(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_SESSIONS_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      }
-    } catch {
-      // Fallback to seed
-    }
-    return buildSeedSessions();
+    const parsed = readLocalStorageJson<AuditSession[]>(STORAGE_SESSIONS_KEY);
+    return Array.isArray(parsed) && parsed.length > 0 ? parsed : buildSeedSessions();
   });
 
   const [actionItems, setActionItems] = useState<ActionItemEntry[]>(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_ACTIONS_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed)) return parsed;
-      }
-    } catch {
-      // Fallback to seed
-    }
-    return SEED_ACTION_ITEMS;
+    const parsed = readLocalStorageJson<ActionItemEntry[]>(STORAGE_ACTIONS_KEY);
+    return Array.isArray(parsed) ? parsed : SEED_ACTION_ITEMS;
   });
 
   const [gradingScheme, setGradingScheme] = useState<GradingSchemeConfig>(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_SCHEME_KEY);
-      if (raw) return JSON.parse(raw);
-    } catch {
-      // Fallback
-    }
-    return DEFAULT_GRADING_SCHEME;
+    const parsed = readLocalStorageJson<GradingSchemeConfig>(STORAGE_SCHEME_KEY);
+    return parsed || DEFAULT_GRADING_SCHEME;
   });
 
+  // Track user mutations before async IndexedDB hydration completes
+  const mutatedSessionsRef = useRef(false);
+  const mutatedActionsRef = useRef(false);
+  const mutatedSchemeRef = useRef(false);
+  const mutatedDosenRef = useRef(false);
+  const idbHydratedRef = useRef(false);
+
   useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_SESSIONS_KEY, JSON.stringify(sessions));
-    } catch {
-      // Ignore quota issues
-    }
+    let cancelled = false;
+    loadAllPersistedState().then((persisted) => {
+      if (cancelled) return;
+      if (!mutatedSessionsRef.current && persisted.sessions && persisted.sessions.length > 0) {
+        setSessions(persisted.sessions);
+      }
+      if (!mutatedActionsRef.current && persisted.actionItems) {
+        setActionItems(persisted.actionItems);
+      }
+      if (!mutatedSchemeRef.current && persisted.gradingScheme) {
+        setGradingScheme(persisted.gradingScheme);
+      }
+      if (!mutatedDosenRef.current && persisted.dosenAccount?.email) {
+        setDosenAccount(persisted.dosenAccount);
+        setRole('dosen');
+      }
+      idbHydratedRef.current = true;
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!idbHydratedRef.current && !mutatedSessionsRef.current) return;
+    void savePersistedKey(STORAGE_SESSIONS_KEY, sessions);
   }, [sessions]);
 
   useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_ACTIONS_KEY, JSON.stringify(actionItems));
-    } catch {
-      // Ignore
-    }
+    if (!idbHydratedRef.current && !mutatedActionsRef.current) return;
+    void savePersistedKey(STORAGE_ACTIONS_KEY, actionItems);
   }, [actionItems]);
 
   useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_SCHEME_KEY, JSON.stringify(gradingScheme));
-    } catch {
-      // Ignore
-    }
+    if (!idbHydratedRef.current && !mutatedSchemeRef.current) return;
+    void savePersistedKey(STORAGE_SCHEME_KEY, gradingScheme);
   }, [gradingScheme]);
 
   useEffect(() => {
-    try {
-      if (dosenAccount) {
-        localStorage.setItem(STORAGE_DOSEN_KEY, JSON.stringify(dosenAccount));
-      } else {
-        localStorage.removeItem(STORAGE_DOSEN_KEY);
-      }
-    } catch {
-      // Ignore
-    }
+    if (!idbHydratedRef.current && !mutatedDosenRef.current) return;
+    void savePersistedKey(STORAGE_DOSEN_KEY, dosenAccount);
   }, [dosenAccount]);
 
   // Live Operational Clock
@@ -242,19 +227,22 @@ export default function App() {
     return () => unsub();
   }, []);
 
-  const handleSignInGoogle = async (loginHintEmail?: string) => {
+  const handleSignInGoogle = async (loginHintEmail?: string, rethrowOnError = false) => {
     setAuthLoading(true);
     try {
       const { user, accessToken: token } = await signInWithGoogleWorkspace(loginHintEmail);
-      setWorkspaceUser(user);
-      setAccessToken(token);
-      setDosenAccount({
+      const nextAccount: DosenAccount = {
         email: user.email,
         displayName: user.displayName || user.email,
         authMethod: 'google',
         photoURL: user.photoURL,
         loggedInAt: new Date().toISOString(),
-      });
+      };
+      mutatedDosenRef.current = true;
+      setWorkspaceUser(user);
+      setAccessToken(token);
+      setDosenAccount(nextAccount);
+      void savePersistedKey(STORAGE_DOSEN_KEY, nextAccount);
       setRole('dosen');
       setLoginModalOpen(false);
       showToast('success', `Berhasil login sebagai Dosen (${user.email}) dan terhubung Google Workspace.`);
@@ -268,22 +256,26 @@ export default function App() {
         setCalendarLoading(false);
       }
     } catch (err: unknown) {
-      showToast(
-        'error',
-        err instanceof Error ? err.message : 'Login Google dibatalkan atau gagal.'
-      );
+      const message = err instanceof Error ? err.message : 'Login Google dibatalkan atau gagal.';
+      showToast('error', message);
+      if (rethrowOnError) {
+        throw err instanceof Error ? err : new Error(message);
+      }
     } finally {
       setAuthLoading(false);
     }
   };
 
   const handleLoginDosenEmail = (email: string, displayName: string) => {
-    setDosenAccount({
+    const nextAccount: DosenAccount = {
       email,
       displayName,
       authMethod: 'email',
       loggedInAt: new Date().toISOString(),
-    });
+    };
+    mutatedDosenRef.current = true;
+    setDosenAccount(nextAccount);
+    void savePersistedKey(STORAGE_DOSEN_KEY, nextAccount);
     setRole('dosen');
     setLoginModalOpen(false);
     showToast('success', `Berhasil login sebagai Dosen (${email}).`);
@@ -297,10 +289,12 @@ export default function App() {
         // Ignore signOut cleanup errors
       }
     }
+    mutatedDosenRef.current = true;
     setWorkspaceUser(null);
     setAccessToken(null);
     setCalendarEvents([]);
     setDosenAccount(null);
+    void savePersistedKey(STORAGE_DOSEN_KEY, null);
     setRole('mahasiswa');
     setEditingSession(null);
     showToast('info', 'Anda telah logout. Aplikasi beralih ke mode Mahasiswa / Tamu.');
@@ -472,75 +466,143 @@ export default function App() {
     });
   };
 
-  // Audit Session CRUD + Audit Trail Edit
-  const handleSaveSession = (
+  // Audit Session CRUD + Audit Trail Edit + Delete
+  const handleSaveSession = async (
     saved: AuditSession,
     editReason?: string,
     isEdit?: boolean
   ) => {
+    if (role !== 'dosen') {
+      setLoginModalOpen(true);
+      showToast('info', 'Silakan login sebagai Dosen terlebih dahulu untuk menyimpan penilaian.');
+      return;
+    }
+
+    mutatedSessionsRef.current = true;
+    let nextSessions: AuditSession[];
+
     if (isEdit) {
-      setSessions((prev) =>
-        prev.map((existing) => {
-          if (existing.id !== saved.id) return existing;
-          const diffLogs = buildAuditDiffLogs(
-            existing,
-            saved,
-            saved.auditorName || dosenAccount?.displayName || dosenAccount?.email || 'Dosen Evaluator',
-            role,
-            editReason
-          );
-          return {
-            ...saved,
-            editHistory: [...diffLogs, ...existing.editHistory],
-          };
-        })
+      nextSessions = sessions.map((existing) => {
+        if (existing.id !== saved.id) return existing;
+        const diffLogs = buildAuditDiffLogs(
+          existing,
+          saved,
+          saved.auditorName || dosenAccount?.displayName || dosenAccount?.email || 'Dosen Evaluator',
+          role,
+          editReason
+        );
+        return {
+          ...saved,
+          editHistory: [...diffLogs, ...existing.editHistory],
+        };
+      });
+    } else {
+      nextSessions = [saved, ...sessions];
+    }
+
+    setSessions(nextSessions);
+    const persistRes = await savePersistedKey(STORAGE_SESSIONS_KEY, nextSessions);
+
+    if (!persistRes.saved) {
+      showToast(
+        'error',
+        'Penilaian diperbarui di layar, namun penyimpanan browser gagal menulis permanen.'
       );
+    } else if (isEdit) {
       showToast(
         'success',
-        `Perubahan sesi ${saved.date} disimpan. Akumulasi nilai & ringkasan evaluasi diperbarui.`
+        `Perubahan sesi ${saved.date} tersimpan permanen. Akumulasi nilai & ringkasan diperbarui.`
       );
     } else {
-      setSessions((prev) => [saved, ...prev]);
       showToast('success', `Lembar observasi baru (${saved.date}) berhasil disimpan.`);
     }
+
     setEditingSession(null);
+    setModalSession((prev) => (prev?.id === saved.id ? saved : prev));
     setActiveView('history');
   };
 
-  const handleUnlockSession = (sessionId: string) => {
-    setSessions((prev) =>
-      prev.map((s) =>
-        s.id === sessionId
-          ? {
-              ...s,
-              isLocked: false,
-              editHistory: [
-                {
-                  id: `log-unlock-${Date.now()}`,
-                  timestamp: new Date().toISOString(),
-                  editorName:
-                    s.auditorName || dosenAccount?.displayName || dosenAccount?.email || 'Dosen Evaluator',
-                  editorRole: role,
-                  fieldLabel: 'Status Kunci Sesi',
-                  oldValue: 'Terkunci',
-                  newValue: 'Terbuka',
-                  reason: 'Sesi dibuka kuncinya oleh Dosen untuk revisi audit.',
-                },
-                ...s.editHistory,
-              ],
-            }
-          : s
-      )
+  const handleDeleteSession = async (sessionId: string) => {
+    if (role !== 'dosen') {
+      setLoginModalOpen(true);
+      return;
+    }
+    const target = sessions.find((s) => s.id === sessionId);
+    mutatedSessionsRef.current = true;
+    mutatedActionsRef.current = true;
+
+    const nextSessions = sessions.filter((s) => s.id !== sessionId);
+    const nextActions = actionItems.filter((a) => a.sessionId !== sessionId);
+
+    setSessions(nextSessions);
+    setActionItems(nextActions);
+    await Promise.all([
+      savePersistedKey(STORAGE_SESSIONS_KEY, nextSessions),
+      savePersistedKey(STORAGE_ACTIONS_KEY, nextActions),
+    ]);
+
+    if (editingSession?.id === sessionId) setEditingSession(null);
+    if (modalSession?.id === sessionId) setModalSession(null);
+    if (printSessionTarget?.id === sessionId) setPrintSessionTarget(nextSessions[0] || null);
+
+    showToast(
+      'success',
+      `Riwayat penilaian ${target ? `${target.day}, ${target.date}` : ''} telah dihapus.`
     );
+  };
+
+  const handleUnlockSession = (sessionId: string) => {
+    mutatedSessionsRef.current = true;
+    const unlockLog = {
+      id: `log-unlock-${Date.now()}`,
+      timestamp: new Date().toISOString(),
+      editorName: dosenAccount?.displayName || dosenAccount?.email || 'Dosen Evaluator',
+      editorRole: role,
+      fieldLabel: 'Status Kunci Sesi',
+      oldValue: 'Terkunci',
+      newValue: 'Terbuka',
+      reason: 'Sesi dibuka kuncinya oleh Dosen untuk revisi audit.',
+    };
+
+    const nextSessions = sessions.map((s) =>
+      s.id === sessionId
+        ? {
+            ...s,
+            isLocked: false,
+            editHistory: [unlockLog, ...s.editHistory],
+          }
+        : s
+    );
+
+    setSessions(nextSessions);
+    void savePersistedKey(STORAGE_SESSIONS_KEY, nextSessions);
+
+    setEditingSession((prev) =>
+      prev && prev.id === sessionId
+        ? { ...prev, isLocked: false, editHistory: [unlockLog, ...prev.editHistory] }
+        : prev
+    );
+    setModalSession((prev) =>
+      prev && prev.id === sessionId
+        ? { ...prev, isLocked: false, editHistory: [unlockLog, ...prev.editHistory] }
+        : prev
+    );
+
     showToast('info', 'Kunci sesi dibuka. Data lembar observasi kini dapat diperbarui.');
   };
 
   const handleStartEditSession = (session: AuditSession) => {
+    if (role !== 'dosen') {
+      setLoginModalOpen(true);
+      showToast('info', 'Login sebagai Dosen untuk mengedit lembar penilaian.');
+      return;
+    }
     setEditingSession(session);
     setActiveView('form');
   };
 
   const handleAddActionItem = (item: Omit<ActionItemEntry, 'id'>) => {
+    mutatedActionsRef.current = true;
     setActionItems((prev) => [
       { ...item, id: `act-${Date.now()}-${Math.random().toString(36).slice(2, 6)}` },
       ...prev,
@@ -548,10 +610,12 @@ export default function App() {
   };
 
   const handleUpdateActionStatus = (id: string, status: ActionItemEntry['status']) => {
+    mutatedActionsRef.current = true;
     setActionItems((prev) => prev.map((a) => (a.id === id ? { ...a, status } : a)));
   };
 
   const handleDeleteActionItem = (id: string) => {
+    mutatedActionsRef.current = true;
     setActionItems((prev) => prev.filter((a) => a.id !== id));
   };
 
@@ -972,141 +1036,154 @@ export default function App() {
             </div>
           )}
 
-          {/* Main Content Body */}
+          {/* Main Content Body with Smooth LayoutGroup Fade-In + Slide-Up View Transitions */}
           <main className="flex-1 p-4 sm:p-6 max-w-[1440px] w-full mx-auto">
-            <MenuVisualBanner
-              view={activeView}
-              summaryBadge={role === 'dosen' ? 'Mode Dosen' : 'Mode Mahasiswa'}
-            />
-            <AnimatePresence mode="wait">
-              <motion.div
-                key={activeView}
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -6 }}
-                transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
-              >
-                {activeView === 'dashboard' && (
-                  <DashboardView
-                    sessions={sessions}
-                    monthFilter={monthFilter}
-                    role={role}
-                    gradingScheme={gradingScheme}
-                    onUpdateGradingScheme={setGradingScheme}
-                    onInspectSession={(s) => {
-                      setModalSession(s);
-                      setActiveView('history');
-                    }}
-                    onEditSession={handleStartEditSession}
-                    onNavigateForm={() => {
-                      setEditingSession(null);
-                      setActiveView('form');
-                    }}
-                    onOpenPrintReport={handleOpenPrintReport}
-                    onNavigateAnalyzer={() => setActiveView('analyzer')}
-                  />
-                )}
+            <LayoutGroup id="main-view-stage">
+              <MenuVisualBanner
+                view={activeView}
+                summaryBadge={role === 'dosen' ? 'Mode Dosen' : 'Mode Mahasiswa'}
+              />
+              <AnimatePresence mode="wait">
+                <motion.div
+                  key={activeView}
+                  layout="position"
+                  initial={{ opacity: 0, y: 20, scale: 0.992 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: -12, scale: 0.995 }}
+                  transition={{
+                    duration: 0.3,
+                    ease: [0.16, 1, 0.3, 1],
+                    layout: { type: 'spring', stiffness: 320, damping: 30 },
+                  }}
+                >
+                  {activeView === 'dashboard' && (
+                    <DashboardView
+                      sessions={sessions}
+                      monthFilter={monthFilter}
+                      role={role}
+                      gradingScheme={gradingScheme}
+                      onUpdateGradingScheme={(next) => {
+                        mutatedSchemeRef.current = true;
+                        setGradingScheme(next);
+                      }}
+                      onInspectSession={(s) => {
+                        setModalSession(s);
+                        setActiveView('history');
+                      }}
+                      onEditSession={handleStartEditSession}
+                      onNavigateForm={() => {
+                        setEditingSession(null);
+                        setActiveView('form');
+                      }}
+                      onOpenPrintReport={handleOpenPrintReport}
+                      onNavigateAnalyzer={() => setActiveView('analyzer')}
+                    />
+                  )}
 
-                {activeView === 'form' && (
-                  <ObservationFormView
-                    editingSession={editingSession}
-                    role={role}
-                    defaultAuditorName={dosenAccount?.displayName || dosenAccount?.email}
-                    onSaveSession={handleSaveSession}
-                    onCancelEdit={() => {
-                      setEditingSession(null);
-                      setActiveView('history');
-                    }}
-                    onUnlockSession={handleUnlockSession}
-                    onAddActionItem={handleAddActionItem}
-                    onPrintSession={(s) => handleOpenPrintReport(s)}
-                  />
-                )}
+                  {activeView === 'form' && (
+                    <ObservationFormView
+                      editingSession={editingSession}
+                      role={role}
+                      defaultAuditorName={dosenAccount?.displayName || dosenAccount?.email}
+                      onSaveSession={handleSaveSession}
+                      onCancelEdit={() => {
+                        setEditingSession(null);
+                        setActiveView('history');
+                      }}
+                      onUnlockSession={handleUnlockSession}
+                      onAddActionItem={handleAddActionItem}
+                      onPrintSession={(s) => handleOpenPrintReport(s)}
+                      onRequestLogin={() => setLoginModalOpen(true)}
+                    />
+                  )}
 
-                {activeView === 'history' && (
-                  <HistoryView
-                    sessions={sessions}
-                    monthFilter={monthFilter}
-                    role={role}
-                    selectedSessionForModal={modalSession}
-                    onSelectSessionForModal={setModalSession}
-                    onEditSession={handleStartEditSession}
-                    onUnlockSession={handleUnlockSession}
-                    onPrintSession={(s) => handleOpenPrintReport(s)}
-                    workspaceConnected={Boolean(accessToken)}
-                    onSyncSessionToCalendar={(s) =>
-                      handleRequestCreateCalendarEvent({
-                        summary: `Audit Start-Up Lens: ${s.day}, ${s.date} (${s.shiftManager})`,
-                        description: `Skor: ${s.weightedScore.toFixed(1)}/100 · ${s.auditorSummaryNote}`,
-                        date: s.date,
-                        startTime: '10:00',
-                        endTime: '22:00',
-                      })
-                    }
-                  />
-                )}
+                  {activeView === 'history' && (
+                    <HistoryView
+                      sessions={sessions}
+                      monthFilter={monthFilter}
+                      role={role}
+                      selectedSessionForModal={modalSession}
+                      onSelectSessionForModal={setModalSession}
+                      onEditSession={handleStartEditSession}
+                      onDeleteSession={handleDeleteSession}
+                      onUnlockSession={handleUnlockSession}
+                      onPrintSession={(s) => handleOpenPrintReport(s)}
+                      onRequestLogin={() => setLoginModalOpen(true)}
+                      workspaceConnected={Boolean(accessToken)}
+                      onSyncSessionToCalendar={(s) =>
+                        handleRequestCreateCalendarEvent({
+                          summary: `Audit Start-Up Lens: ${s.day}, ${s.date} (${s.shiftManager})`,
+                          description: `Skor: ${s.weightedScore.toFixed(1)}/100 · ${s.auditorSummaryNote}`,
+                          date: s.date,
+                          startTime: '10:00',
+                          endTime: '22:00',
+                        })
+                      }
+                    />
+                  )}
 
-                {activeView === 'analyzer' && (
-                  <AnalyzerView
-                    sessions={sessions}
-                    monthFilter={monthFilter}
-                    actionItems={actionItems}
-                    role={role}
-                    onAddActionItem={handleAddActionItem}
-                    onUpdateActionStatus={handleUpdateActionStatus}
-                    onDeleteActionItem={handleDeleteActionItem}
-                    onInspectSession={(s) => {
-                      setModalSession(s);
-                      setActiveView('history');
-                    }}
-                    workspaceConnected={Boolean(accessToken)}
-                    onSyncActionToCalendar={(act) =>
-                      handleRequestCreateCalendarEvent({
-                        summary: `Tindak Lanjut Start-Up Lens: ${act.category}`,
-                        description: `${act.title} (PIC: ${act.owner}, Prioritas: ${act.priority})`,
-                        date: act.dueDate,
-                        startTime: '10:00',
-                        endTime: '11:00',
-                      })
-                    }
-                  />
-                )}
+                  {activeView === 'analyzer' && (
+                    <AnalyzerView
+                      sessions={sessions}
+                      monthFilter={monthFilter}
+                      actionItems={actionItems}
+                      role={role}
+                      onAddActionItem={handleAddActionItem}
+                      onUpdateActionStatus={handleUpdateActionStatus}
+                      onDeleteActionItem={handleDeleteActionItem}
+                      onInspectSession={(s) => {
+                        setModalSession(s);
+                        setActiveView('history');
+                      }}
+                      workspaceConnected={Boolean(accessToken)}
+                      onSyncActionToCalendar={(act) =>
+                        handleRequestCreateCalendarEvent({
+                          summary: `Tindak Lanjut Start-Up Lens: ${act.category}`,
+                          description: `${act.title} (PIC: ${act.owner}, Prioritas: ${act.priority})`,
+                          date: act.dueDate,
+                          startTime: '10:00',
+                          endTime: '11:00',
+                        })
+                      }
+                    />
+                  )}
 
-                {activeView === 'sop' && (
-                  <SopScheduleView
-                    workspaceConnected={Boolean(accessToken)}
-                    workspaceEmail={workspaceUser?.email || null}
-                    authLoading={authLoading}
-                    onSignInGoogle={() => handleSignInGoogle(dosenAccount?.email)}
-                    calendarEvents={calendarEvents}
-                    calendarLoading={calendarLoading}
-                    onRefreshCalendar={handleRefreshCalendar}
-                    onCreateScheduleEvent={handleRequestCreateCalendarEvent}
-                  />
-                )}
+                  {activeView === 'sop' && (
+                    <SopScheduleView
+                      workspaceConnected={Boolean(accessToken)}
+                      workspaceEmail={workspaceUser?.email || null}
+                      authLoading={authLoading}
+                      onSignInGoogle={() => handleSignInGoogle(dosenAccount?.email)}
+                      calendarEvents={calendarEvents}
+                      calendarLoading={calendarLoading}
+                      onRefreshCalendar={handleRefreshCalendar}
+                      onCreateScheduleEvent={handleRequestCreateCalendarEvent}
+                    />
+                  )}
 
-                {activeView === 'export' && (
-                  <WorkspaceExportView
-                    role={role}
-                    onChangeRole={handleRequestRoleChange}
-                    dosenAccount={dosenAccount}
-                    onOpenLogin={() => setLoginModalOpen(true)}
-                    onLogout={handleLogoutDosen}
-                    sessions={sessions}
-                    actionItems={actionItems}
-                    gradingScheme={gradingScheme}
-                    workspaceUser={workspaceUser}
-                    accessToken={accessToken}
-                    authLoading={authLoading}
-                    onSignInGoogle={() => handleSignInGoogle(dosenAccount?.email)}
-                    onSignOutGoogle={handleSignOutGoogle}
-                    onRequestCreateSheet={handleRequestCreateSheet}
-                    onRequestSyncExistingSheet={handleRequestSyncExistingSheet}
-                    onOpenPrintReport={handleOpenPrintReport}
-                  />
-                )}
-              </motion.div>
-            </AnimatePresence>
+                  {activeView === 'export' && (
+                    <WorkspaceExportView
+                      role={role}
+                      onChangeRole={handleRequestRoleChange}
+                      dosenAccount={dosenAccount}
+                      onOpenLogin={() => setLoginModalOpen(true)}
+                      onLogout={handleLogoutDosen}
+                      sessions={sessions}
+                      actionItems={actionItems}
+                      gradingScheme={gradingScheme}
+                      workspaceUser={workspaceUser}
+                      accessToken={accessToken}
+                      authLoading={authLoading}
+                      onSignInGoogle={() => handleSignInGoogle(dosenAccount?.email)}
+                      onSignOutGoogle={handleSignOutGoogle}
+                      onRequestCreateSheet={handleRequestCreateSheet}
+                      onRequestSyncExistingSheet={handleRequestSyncExistingSheet}
+                      onOpenPrintReport={handleOpenPrintReport}
+                    />
+                  )}
+                </motion.div>
+              </AnimatePresence>
+            </LayoutGroup>
           </main>
         </div>
 
@@ -1115,9 +1192,10 @@ export default function App() {
           isOpen={loginModalOpen}
           authLoading={authLoading}
           initialEmail={dosenAccount?.email || ''}
+          initialName={dosenAccount?.displayName || ''}
           onClose={() => setLoginModalOpen(false)}
           onLoginWithEmail={handleLoginDosenEmail}
-          onLoginWithGoogle={handleSignInGoogle}
+          onLoginWithGoogle={(hint) => handleSignInGoogle(hint, true)}
         />
 
         {/* Explicit Confirmation Modal for Google Sheets & Calendar Writes */}

@@ -33,7 +33,7 @@ import {
   getActiveSessions,
   getLetterGrade,
 } from '../utils/calculations';
-import { AnimatedNumber, ScoreProgressRing } from './GlassPrimitives';
+import { AnimatedNumber } from './GlassPrimitives';
 
 interface StrengthPoint {
   title: string;
@@ -351,136 +351,459 @@ export function DashboardView({
   return (
     <LayoutGroup id="dashboard-cards">
       <div className="space-y-6">
-        {/* Row 1: 4-Card KPI Strip with Framer Motion Layout & Hover Expansion */}
+        {/* Row 1: Modern 4-Card KPI Strip with Living Framer Motion Animations */}
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+          {/* Card 1: Akumulasi Skor Tertimbang */}
           <motion.div
             layout
-            initial={{ opacity: 0, y: 12 }}
+            initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
-            whileHover={{ y: -4, scale: 1.018 }}
+            whileHover={{ y: -4, scale: 1.015 }}
             whileTap={{ scale: 0.99 }}
             transition={springCardTransition}
-            className="glass-panel glass-panel-interactive rounded-2xl p-5 flex items-center justify-between gap-4 cursor-default"
+            className="group glass-panel glass-panel-interactive rounded-2xl p-5 flex flex-col justify-between gap-4 relative overflow-hidden cursor-default"
           >
-            <div className="space-y-1.5 min-w-0">
-              <p className="text-xs font-medium text-slate-500">Akumulasi Skor Tertimbang</p>
-              <div className="flex items-baseline gap-2">
-                <AnimatedNumber
-                  value={termStats.avgWeightedScore}
-                  decimals={1}
-                  className="text-3xl font-bold text-slate-900"
-                />
-                <span className="text-sm font-mono-num text-slate-400">/ 100</span>
+            <div className="flex items-start justify-between gap-3">
+              <div className="space-y-1.5 min-w-0">
+                <p className="text-xs font-medium text-slate-500">Akumulasi Skor Tertimbang</p>
+                <div className="flex items-baseline gap-1.5">
+                  <span className="font-mono-num text-3xl font-extrabold tracking-tight bg-gradient-to-r from-emerald-700 via-teal-600 to-cyan-600 bg-clip-text text-transparent">
+                    <AnimatedNumber value={termStats.avgWeightedScore} decimals={1} />
+                  </span>
+                  <span className="text-xs font-mono-num text-slate-400">/ 100</span>
+                </div>
+                <p className="text-xs text-slate-600">
+                  Mutu{' '}
+                  <strong className="font-semibold text-emerald-700">{currentLetter.letter}</strong>{' '}
+                  · IP <span className="font-mono-num">{currentLetter.gpaPoint.toFixed(1)}</span>
+                </p>
               </div>
-              <p className="text-xs text-slate-600">
-                Mutu <span className="font-semibold text-emerald-700">{currentLetter.letter}</span> · IP{' '}
-                <span className="font-mono-num">{currentLetter.gpaPoint.toFixed(1)}</span> ·{' '}
-                {monthFilter === 'Semua' ? 'Okt 2026–Jan 2027' : monthFilter}
+
+              {/* Animated Orbital Score Ring */}
+              <div className="relative w-20 h-20 shrink-0 flex items-center justify-center">
+                <svg viewBox="0 0 100 100" className="w-full h-full -rotate-90">
+                  <defs>
+                    <linearGradient id="kpiScoreRingGrad" x1="0" y1="0" x2="1" y2="1">
+                      <stop offset="0%" stopColor="#059669" />
+                      <stop offset="100%" stopColor="#0891b2" />
+                    </linearGradient>
+                  </defs>
+                  <motion.circle
+                    cx="50"
+                    cy="50"
+                    r="46"
+                    fill="none"
+                    stroke="rgba(5, 150, 105, 0.18)"
+                    strokeWidth="1.2"
+                    strokeDasharray="3 5"
+                    animate={{ rotate: 360 }}
+                    transition={{ duration: 28, repeat: Infinity, ease: 'linear' }}
+                    style={{ transformOrigin: '50px 50px' }}
+                  />
+                  <circle
+                    cx="50"
+                    cy="50"
+                    r="38"
+                    fill="none"
+                    stroke="rgba(148, 163, 184, 0.2)"
+                    strokeWidth="7"
+                  />
+                  <motion.circle
+                    cx="50"
+                    cy="50"
+                    r="38"
+                    fill="none"
+                    stroke="url(#kpiScoreRingGrad)"
+                    strokeWidth="7"
+                    strokeLinecap="round"
+                    strokeDasharray={2 * Math.PI * 38}
+                    initial={{ strokeDashoffset: 2 * Math.PI * 38 }}
+                    animate={{
+                      strokeDashoffset:
+                        2 *
+                        Math.PI *
+                        38 *
+                        (1 - Math.max(0, Math.min(100, termStats.avgWeightedScore)) / 100),
+                    }}
+                    transition={{ type: 'spring', stiffness: 160, damping: 24 }}
+                  />
+                </svg>
+                <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
+                  <AnimatePresence mode="wait">
+                    <motion.span
+                      key={currentLetter.letter}
+                      initial={{ y: 6, opacity: 0, scale: 0.85 }}
+                      animate={{ y: 0, opacity: 1, scale: 1 }}
+                      exit={{ y: -6, opacity: 0, scale: 0.85 }}
+                      transition={{ duration: 0.18 }}
+                      className="font-display text-lg font-extrabold text-emerald-800 leading-none"
+                    >
+                      {currentLetter.letter}
+                    </motion.span>
+                  </AnimatePresence>
+                  <span className="text-[9px] font-mono-num text-slate-400 mt-0.5">
+                    {monthFilter === 'Semua' ? '3 Bln' : monthFilter.slice(0, 3)}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <div className="h-1.5 w-full rounded-full bg-slate-100 overflow-hidden">
+                <motion.div
+                  initial={{ scaleX: 0 }}
+                  animate={{ scaleX: Math.max(0.05, Math.min(1, termStats.avgWeightedScore / 100)) }}
+                  transition={{ type: 'spring', stiffness: 200, damping: 26 }}
+                  style={{ originX: 0 }}
+                  className="h-full w-full rounded-full bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-500 relative overflow-hidden"
+                >
+                  <motion.span
+                    className="absolute inset-y-0 w-10 bg-white/40 blur-[1px]"
+                    animate={{ x: ['-120%', '480%'] }}
+                    transition={{ duration: 2.6, repeat: Infinity, repeatDelay: 2.4, ease: 'easeInOut' }}
+                  />
+                </motion.div>
+              </div>
+              <p className="text-[11px] text-slate-500">
+                Periode {monthFilter === 'Semua' ? 'Okt 2026–Jan 2027' : monthFilter}
               </p>
             </div>
-            <ScoreProgressRing
-              score={termStats.avgWeightedScore}
-              size={78}
-              strokeWidth={7}
-              color="#059669"
-            />
           </motion.div>
 
+          {/* Card 2: Sesi Aktif & Pengecualian Libur */}
           <motion.div
             layout
-            initial={{ opacity: 0, y: 12 }}
+            initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
-            whileHover={{ y: -4, scale: 1.018 }}
+            whileHover={{ y: -4, scale: 1.015 }}
             whileTap={{ scale: 0.99 }}
-            transition={{ ...springCardTransition, delay: 0.04 }}
-            className="glass-panel glass-panel-interactive rounded-2xl p-5 space-y-2 cursor-default"
+            transition={{ ...springCardTransition, delay: 0.05 }}
+            className="group glass-panel glass-panel-interactive rounded-2xl p-5 flex flex-col justify-between gap-4 relative overflow-hidden cursor-default"
           >
-            <div className="flex items-center justify-between">
-              <p className="text-xs font-medium text-slate-500">Sesi Aktif &amp; Pengecualian Libur</p>
-              <CalendarClock className="w-4 h-4 text-emerald-700" />
+            <div className="flex items-start justify-between gap-3">
+              <div className="space-y-1.5 min-w-0">
+                <p className="text-xs font-medium text-slate-500">
+                  Sesi Aktif &amp; Pengecualian Libur
+                </p>
+                <div className="flex items-baseline gap-2">
+                  <span className="font-mono-num text-3xl font-extrabold tracking-tight bg-gradient-to-r from-slate-900 via-emerald-800 to-teal-700 bg-clip-text text-transparent">
+                    <AnimatedNumber value={termStats.activeCount} />
+                  </span>
+                  <span className="text-xs font-medium text-slate-500">sesi dinilai</span>
+                </div>
+                <p className="text-xs text-slate-600">
+                  <span className="font-mono-num font-medium text-amber-700">
+                    {termStats.posTransitionCount} transisi POS
+                  </span>{' '}
+                  ·{' '}
+                  <span className="font-mono-num text-slate-500">
+                    {termStats.holidayCount} hari libur
+                  </span>
+                </p>
+              </div>
+
+              {/* Animated Operational Cadence Bars */}
+              <div className="flex flex-col items-end gap-2 shrink-0">
+                <motion.div
+                  whileHover={{ rotate: 8, scale: 1.08 }}
+                  transition={{ type: 'spring', stiffness: 360, damping: 20 }}
+                  className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200/80"
+                >
+                  <CalendarClock className="w-4 h-4" />
+                </motion.div>
+                <div className="flex items-end gap-1 h-7 px-1" aria-hidden="true">
+                  {[0.55, 0.88, 0.72, 0.96, 0.64].map((baseH, idx) => (
+                    <motion.span
+                      key={idx}
+                      style={{ originY: 1, height: `${Math.round(baseH * 24)}px` }}
+                      animate={{ scaleY: [0.65, 1.05, 0.72] }}
+                      transition={{
+                        duration: 2.1,
+                        repeat: Infinity,
+                        delay: idx * 0.22,
+                        ease: 'easeInOut',
+                      }}
+                      className={`w-1.5 rounded-full ${
+                        idx === 3
+                          ? 'bg-amber-500'
+                          : 'bg-gradient-to-t from-emerald-600 to-teal-400'
+                      }`}
+                    />
+                  ))}
+                </div>
+              </div>
             </div>
-            <div className="flex items-baseline gap-2">
-              <AnimatedNumber
-                value={termStats.activeCount}
-                className="text-3xl font-bold text-slate-900"
-              />
-              <span className="text-xs text-slate-500">sesi dinilai</span>
-            </div>
-            <p className="text-xs text-slate-600">
-              <span className="font-mono-num font-medium text-amber-700">
-                {termStats.posTransitionCount} transisi POS
-              </span>{' '}
-              ·{' '}
-              <span className="font-mono-num text-slate-500">
-                {termStats.holidayCount} hari libur dikecualikan
-              </span>
-            </p>
+
+            {(() => {
+              const totalSlots = Math.max(1, termStats.activeCount + termStats.holidayCount);
+              const normalCount = Math.max(0, termStats.activeCount - termStats.posTransitionCount);
+              const normalPct = (normalCount / totalSlots) * 100;
+              const posPct = (termStats.posTransitionCount / totalSlots) * 100;
+              const holidayPct = (termStats.holidayCount / totalSlots) * 100;
+              return (
+                <div className="space-y-1.5">
+                  <motion.div
+                    initial={{ scaleX: 0 }}
+                    animate={{ scaleX: 1 }}
+                    transition={{ duration: 0.45, delay: 0.1, ease: [0.16, 1, 0.3, 1] }}
+                    style={{ originX: 0 }}
+                    className="h-1.5 w-full rounded-full bg-slate-100 overflow-hidden flex gap-0.5"
+                  >
+                    <div
+                      style={{ width: `${normalPct}%` }}
+                      className="h-full bg-gradient-to-r from-emerald-500 to-teal-500 transition-[width] duration-300"
+                    />
+                    {posPct > 0 && (
+                      <div
+                        style={{ width: `${posPct}%` }}
+                        className="h-full bg-amber-400 transition-[width] duration-300"
+                      />
+                    )}
+                    {holidayPct > 0 && (
+                      <div
+                        style={{ width: `${holidayPct}%` }}
+                        className="h-full bg-slate-300 transition-[width] duration-300"
+                      />
+                    )}
+                  </motion.div>
+                  <p className="text-[11px] text-slate-500">
+                    {normalCount} normal · {termStats.holidayCount} libur dikecualikan
+                  </p>
+                </div>
+              );
+            })()}
           </motion.div>
 
+          {/* Card 3: Total Omset & Rekonsiliasi Kas */}
           <motion.div
             layout
-            initial={{ opacity: 0, y: 12 }}
+            initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
-            whileHover={{ y: -4, scale: 1.018 }}
+            whileHover={{ y: -4, scale: 1.015 }}
             whileTap={{ scale: 0.99 }}
-            transition={{ ...springCardTransition, delay: 0.08 }}
-            className="glass-panel glass-panel-interactive rounded-2xl p-5 space-y-2 cursor-default"
+            transition={{ ...springCardTransition, delay: 0.1 }}
+            className="group glass-panel glass-panel-interactive rounded-2xl p-5 flex flex-col justify-between gap-4 relative overflow-hidden cursor-default"
           >
-            <div className="flex items-center justify-between">
-              <p className="text-xs font-medium text-slate-500">Total Omset &amp; Rekonsiliasi Kas</p>
-              <TrendingUp className="w-4 h-4 text-emerald-700" />
-            </div>
-            <div>
-              <AnimatedNumber
-                value={termStats.totalRevenueIdr}
-                prefix="IDR "
-                className="text-2xl font-bold text-slate-900 block truncate"
-              />
-            </div>
-            <p className="text-xs text-slate-600">
-              <span className="font-mono-num font-medium text-emerald-700">
-                {termStats.exactCashCount}/{termStats.activeCount} sesi IDR 0
-              </span>{' '}
-              · Net{' '}
-              <span
-                className={`font-mono-num ${
-                  termStats.netCashVarianceIdr === 0 ? 'text-emerald-700' : 'text-amber-700'
-                }`}
+            {(() => {
+              const revSeries = activeOrdered.slice(-8).map((s) => s.totalRevenueIdr);
+              const minRev = revSeries.length > 0 ? Math.min(...revSeries) : 0;
+              const maxRev = revSeries.length > 0 ? Math.max(...revSeries) : 1;
+              const spanRev = Math.max(1, maxRev - minRev);
+              const sparkPts =
+                revSeries.length > 1
+                  ? revSeries.map((val, idx) => {
+                      const sx = (idx / (revSeries.length - 1)) * 78 + 3;
+                      const sy = 26 - ((val - minRev) / spanRev) * 20;
+                      return { sx, sy };
+                    })
+                  : [
+                      { sx: 3, sy: 16 },
+                      { sx: 81, sy: 16 },
+                    ];
+              const sparkPath = sparkPts
+                .map((pt, i) => `${i === 0 ? 'M' : 'L'} ${pt.sx.toFixed(1)} ${pt.sy.toFixed(1)}`)
+                .join(' ');
+              const lastPt = sparkPts[sparkPts.length - 1];
+              const cashAccuracyRatio =
+                termStats.activeCount > 0 ? termStats.exactCashCount / termStats.activeCount : 0;
+
+              return (
+                <>
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="space-y-1.5 min-w-0">
+                      <p className="text-xs font-medium text-slate-500">
+                        Total Omset &amp; Rekonsiliasi Kas
+                      </p>
+                      <div className="font-mono-num text-2xl font-extrabold tracking-tight bg-gradient-to-r from-emerald-700 via-teal-700 to-blue-700 bg-clip-text text-transparent truncate">
+                        <AnimatedNumber value={termStats.totalRevenueIdr} prefix="IDR " />
+                      </div>
+                      <p className="text-xs text-slate-600">
+                        <span className="font-mono-num font-semibold text-emerald-700">
+                          {termStats.exactCashCount}/{termStats.activeCount}
+                        </span>{' '}
+                        kas tepat · Net{' '}
+                        <span
+                          className={`font-mono-num font-medium ${
+                            termStats.netCashVarianceIdr === 0 ? 'text-emerald-700' : 'text-amber-700'
+                          }`}
+                        >
+                          {formatCashVariance(termStats.netCashVarianceIdr)}
+                        </span>
+                      </p>
+                    </div>
+
+                    {/* Animated Revenue Sparkline + Icon */}
+                    <div className="flex flex-col items-end gap-1.5 shrink-0">
+                      <motion.div
+                        whileHover={{ y: -2, scale: 1.08 }}
+                        transition={{ type: 'spring', stiffness: 360, damping: 20 }}
+                        className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-50 text-blue-700 border border-blue-200/80"
+                      >
+                        <TrendingUp className="w-4 h-4" />
+                      </motion.div>
+                      <svg
+                        viewBox="0 0 84 30"
+                        className="w-20 h-7 overflow-visible"
+                        aria-hidden="true"
+                      >
+                        <defs>
+                          <linearGradient id="kpiRevSparkGrad" x1="0" y1="0" x2="1" y2="0">
+                            <stop offset="0%" stopColor="#059669" />
+                            <stop offset="100%" stopColor="#2563eb" />
+                          </linearGradient>
+                        </defs>
+                        <motion.path
+                          key={`rev-spark-${monthFilter}-${revSeries.length}`}
+                          d={sparkPath}
+                          fill="none"
+                          stroke="url(#kpiRevSparkGrad)"
+                          strokeWidth="2.2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          initial={{ pathLength: 0, opacity: 0.4 }}
+                          animate={{ pathLength: 1, opacity: 1 }}
+                          transition={{ duration: 0.85, ease: [0.16, 1, 0.3, 1] }}
+                        />
+                        <motion.circle
+                          cx={lastPt.sx}
+                          cy={lastPt.sy}
+                          r="3"
+                          fill="#059669"
+                          animate={{ scale: [1, 1.45, 1], opacity: [0.9, 0.45, 0.9] }}
+                          transition={{ duration: 2.2, repeat: Infinity, ease: 'easeInOut' }}
+                        />
+                      </svg>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <div className="h-1.5 w-full rounded-full bg-slate-100 overflow-hidden">
+                      <motion.div
+                        initial={{ scaleX: 0 }}
+                        animate={{ scaleX: Math.max(0.05, Math.min(1, cashAccuracyRatio)) }}
+                        transition={{ type: 'spring', stiffness: 220, damping: 26 }}
+                        style={{ originX: 0 }}
+                        className="h-full w-full rounded-full bg-gradient-to-r from-emerald-500 to-blue-600 relative overflow-hidden"
+                      >
+                        <motion.span
+                          className="absolute inset-y-0 w-8 bg-white/40 blur-[1px]"
+                          animate={{ x: ['-120%', '460%'] }}
+                          transition={{
+                            duration: 2.8,
+                            repeat: Infinity,
+                            repeatDelay: 2.8,
+                            ease: 'easeInOut',
+                          }}
+                        />
+                      </motion.div>
+                    </div>
+                    <p className="text-[11px] text-slate-500">
+                      Akurasi rekonsiliasi kas {Math.round(cashAccuracyRatio * 100)}%
+                    </p>
+                  </div>
+                </>
+              );
+            })()}
+          </motion.div>
+
+          {/* Card 4: Kitchen Waste & Kepatuhan SLA */}
+          <motion.div
+            layout
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            whileHover={{ y: -4, scale: 1.015 }}
+            whileTap={{ scale: 0.99 }}
+            transition={{ ...springCardTransition, delay: 0.15 }}
+            className="group glass-panel glass-panel-interactive rounded-2xl p-5 flex flex-col justify-between gap-4 relative overflow-hidden cursor-default"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="space-y-1.5 min-w-0">
+                <p className="text-xs font-medium text-slate-500">
+                  Kitchen Waste &amp; Kepatuhan SLA
+                </p>
+                <div className="flex items-baseline gap-2">
+                  <span className="font-mono-num text-2xl sm:text-[26px] font-extrabold tracking-tight bg-gradient-to-r from-amber-600 via-orange-600 to-rose-600 bg-clip-text text-transparent">
+                    <AnimatedNumber
+                      value={termStats.totalWasteGrams / 1000}
+                      decimals={2}
+                      suffix=" kg"
+                    />
+                  </span>
+                  <span className="font-mono-num text-xs text-slate-400">
+                    ({wasteDisplay.gramsText})
+                  </span>
+                </div>
+              </div>
+
+              <motion.div
+                animate={{ rotate: [0, -6, 6, 0] }}
+                transition={{ duration: 4.5, repeat: Infinity, repeatDelay: 3, ease: 'easeInOut' }}
+                className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-50 text-amber-600 border border-amber-200/80 shrink-0"
               >
-                {formatCashVariance(termStats.netCashVarianceIdr)}
-              </span>
-            </p>
-          </motion.div>
+                <AlertTriangle className="w-4 h-4" />
+              </motion.div>
+            </div>
 
-          <motion.div
-            layout
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            whileHover={{ y: -4, scale: 1.018 }}
-            whileTap={{ scale: 0.99 }}
-            transition={{ ...springCardTransition, delay: 0.12 }}
-            className="glass-panel glass-panel-interactive rounded-2xl p-5 space-y-2 cursor-default"
-          >
-            <div className="flex items-center justify-between">
-              <p className="text-xs font-medium text-slate-500">Kitchen Waste &amp; Kepatuhan SLA</p>
-              <AlertTriangle className="w-4 h-4 text-amber-600" />
+            {/* Dual Animated SLA Compliance Gauges */}
+            <div className="space-y-2.5">
+              <div className="space-y-1">
+                <div className="flex items-center justify-between text-[11px]">
+                  <span className="text-slate-600">SLA Minuman (&lt;5m)</span>
+                  <span className="font-mono-num font-bold text-emerald-700">
+                    {termStats.drinkSlaRate}%
+                  </span>
+                </div>
+                <div className="h-1.5 w-full rounded-full bg-slate-100 overflow-hidden">
+                  <motion.div
+                    initial={{ scaleX: 0 }}
+                    animate={{ scaleX: Math.max(0.04, Math.min(1, termStats.drinkSlaRate / 100)) }}
+                    transition={{ type: 'spring', stiffness: 220, damping: 26 }}
+                    style={{ originX: 0 }}
+                    className="h-full w-full rounded-full bg-gradient-to-r from-emerald-500 to-teal-500 relative overflow-hidden"
+                  >
+                    <motion.span
+                      className="absolute inset-y-0 w-8 bg-white/40 blur-[1px]"
+                      animate={{ x: ['-120%', '460%'] }}
+                      transition={{
+                        duration: 2.5,
+                        repeat: Infinity,
+                        repeatDelay: 2.2,
+                        ease: 'easeInOut',
+                      }}
+                    />
+                  </motion.div>
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <div className="flex items-center justify-between text-[11px]">
+                  <span className="text-slate-600">SLA Makanan (&lt;10m)</span>
+                  <span className="font-mono-num font-bold text-blue-700">
+                    {termStats.foodSlaRate}%
+                  </span>
+                </div>
+                <div className="h-1.5 w-full rounded-full bg-slate-100 overflow-hidden">
+                  <motion.div
+                    initial={{ scaleX: 0 }}
+                    animate={{ scaleX: Math.max(0.04, Math.min(1, termStats.foodSlaRate / 100)) }}
+                    transition={{ type: 'spring', stiffness: 220, damping: 26, delay: 0.06 }}
+                    style={{ originX: 0 }}
+                    className="h-full w-full rounded-full bg-gradient-to-r from-blue-500 to-indigo-600 relative overflow-hidden"
+                  >
+                    <motion.span
+                      className="absolute inset-y-0 w-8 bg-white/40 blur-[1px]"
+                      animate={{ x: ['-120%', '460%'] }}
+                      transition={{
+                        duration: 2.5,
+                        repeat: Infinity,
+                        repeatDelay: 2.6,
+                        ease: 'easeInOut',
+                      }}
+                    />
+                  </motion.div>
+                </div>
+              </div>
             </div>
-            <div className="flex items-baseline gap-2">
-              <span className="font-mono-num text-2xl font-bold text-slate-900">
-                {wasteDisplay.kgText}
-              </span>
-              <span className="font-mono-num text-xs text-slate-500">({wasteDisplay.gramsText})</span>
-            </div>
-            <p className="text-xs text-slate-600">
-              SLA Minuman &lt;5m:{' '}
-              <span className="font-mono-num font-semibold text-emerald-700">
-                {termStats.drinkSlaRate}%
-              </span>{' '}
-              · Makanan &lt;10m:{' '}
-              <span className="font-mono-num font-semibold text-blue-700">
-                {termStats.foodSlaRate}%
-              </span>
-            </p>
           </motion.div>
         </div>
 

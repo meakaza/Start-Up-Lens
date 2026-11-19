@@ -6,6 +6,7 @@ import {
   ChevronDown,
   ChevronUp,
   Lock,
+  LogIn,
   PenLine,
   Plus,
   Printer,
@@ -82,6 +83,7 @@ export function ObservationFormView({
   onUnlockSession,
   onAddActionItem,
   onPrintSession,
+  onRequestLogin,
 }: {
   editingSession: AuditSession | null;
   role: UserRole;
@@ -91,6 +93,7 @@ export function ObservationFormView({
   onUnlockSession: (sessionId: string) => void;
   onAddActionItem: (item: Omit<ActionItemEntry, 'id'>) => void;
   onPrintSession?: (session: AuditSession) => void;
+  onRequestLogin?: () => void;
 }) {
   const isEditing = editingSession !== null;
   const [form, setForm] = useState<AuditSession>(() =>
@@ -119,7 +122,18 @@ export function ObservationFormView({
     }
     setEditReason('');
     setPendingActionItems([]);
-  }, [editingSession, defaultAuditorName]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editingSession]);
+
+  useEffect(() => {
+    if (!editingSession && defaultAuditorName) {
+      setForm((prev) =>
+        prev.auditorName === 'Dr. Hendra Wijaya, M.M.' || !prev.auditorName.trim()
+          ? { ...prev, auditorName: defaultAuditorName }
+          : prev
+      );
+    }
+  }, [defaultAuditorName, editingSession]);
 
   const isReadOnly = role !== 'dosen' || (isEditing && form.isLocked);
   const isHoliday = form.sessionStatus === 'Libur / Tidak Beroperasi';
@@ -165,18 +179,49 @@ export function ObservationFormView({
     const reader = new FileReader();
     reader.onload = () => {
       if (typeof reader.result !== 'string') return;
-      const target = form.checklist.find((c) => c.itemNumber === itemNumber);
-      if (!target) return;
-      const newEvidence = {
-        id: `ev-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-        name: file.name,
-        dataUrl: reader.result,
-        caption: `Bukti temuan #${itemNumber}`,
-        uploadedAt: new Date().toISOString(),
+      const rawDataUrl = reader.result;
+
+      const commitImage = (finalDataUrl: string) => {
+        setForm((prev) => ({
+          ...prev,
+          checklist: prev.checklist.map((c) => {
+            if (c.itemNumber !== itemNumber) return c;
+            return {
+              ...c,
+              evidenceList: [
+                ...c.evidenceList,
+                {
+                  id: `ev-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+                  name: file.name,
+                  dataUrl: finalDataUrl,
+                  caption: `Bukti temuan #${itemNumber}`,
+                  uploadedAt: new Date().toISOString(),
+                },
+              ],
+            };
+          }),
+        }));
       };
-      updateChecklistItem(itemNumber, {
-        evidenceList: [...target.evidenceList, newEvidence],
-      });
+
+      const img = new Image();
+      img.onload = () => {
+        const maxWidth = 1000;
+        const scale = img.width > maxWidth ? maxWidth / img.width : 1;
+        const targetW = Math.round(img.width * scale);
+        const targetH = Math.round(img.height * scale);
+        const canvas = document.createElement('canvas');
+        canvas.width = targetW;
+        canvas.height = targetH;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, targetW, targetH);
+          commitImage(canvas.toDataURL('image/jpeg', 0.8));
+        } else {
+          commitImage(rawDataUrl);
+        }
+      };
+      img.onerror = () => commitImage(rawDataUrl);
+      img.src = rawDataUrl;
     };
     reader.readAsDataURL(file);
   };
@@ -275,6 +320,8 @@ export function ObservationFormView({
 
     const finalSession: AuditSession = {
       ...form,
+      shiftManager: form.shiftManager.trim() || 'Shift Manager',
+      auditorName: form.auditorName.trim() || defaultAuditorName || 'Dosen Evaluator',
       isPosTransition: form.sessionStatus === 'Penyesuaian Jam / Masa Transisi POS',
       weightedScore: isHoliday ? 0 : calculateWeightedScore(form.rubric),
       updatedAt: new Date().toISOString(),
@@ -285,6 +332,11 @@ export function ObservationFormView({
     }
 
     onSaveSession(finalSession, editReason.trim() || undefined, isEditing);
+    if (!isEditing) {
+      setForm(createBlankSession(defaultAuditorName));
+      setPendingActionItems([]);
+      setEditReason('');
+    }
   };
 
   const phases: ChecklistPhase[] = [
@@ -299,13 +351,25 @@ export function ObservationFormView({
     <form onSubmit={handleSubmit} className="space-y-6">
       {/* Mode Banner: Edit / Locked / Student View */}
       {role !== 'dosen' && (
-        <div className="rounded-2xl border border-amber-200 bg-amber-50/75 p-4 flex items-center gap-3 text-sm text-amber-900">
-          <AlertCircle className="w-5 h-5 shrink-0 text-amber-700" />
-          <div>
-            Mode <span className="font-semibold">Mahasiswa / Grup Start-up</span> aktif. Anda dapat
-            meninjau struktur lembar observasi harian, namun penginputan &amp; pengubahan nilai hanya
-            tersedia pada mode <span className="font-semibold">Dosen / Evaluator</span>.
+        <div className="rounded-2xl border border-amber-200 bg-amber-50/75 p-4 flex flex-wrap items-center justify-between gap-3 text-sm text-amber-900">
+          <div className="flex items-center gap-3 min-w-0 flex-1">
+            <AlertCircle className="w-5 h-5 shrink-0 text-amber-700" />
+            <div>
+              Mode <span className="font-semibold">Mahasiswa / Grup Start-up</span> aktif. Anda dapat
+              meninjau struktur lembar observasi harian, namun penginputan &amp; pengubahan nilai hanya
+              tersedia setelah login <span className="font-semibold">Dosen / Evaluator</span>.
+            </div>
           </div>
+          {onRequestLogin && (
+            <button
+              type="button"
+              onClick={onRequestLogin}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-700 px-3.5 py-2 text-xs font-semibold text-white hover:bg-emerald-800 whitespace-nowrap shrink-0"
+            >
+              <LogIn className="w-3.5 h-3.5" />
+              Login Dosen Sekarang
+            </button>
+          )}
         </div>
       )}
 
@@ -1105,7 +1169,7 @@ export function ObservationFormView({
               </label>
             </div>
 
-            <div className="flex items-center gap-3 shrink-0">
+            <div className="flex flex-wrap items-center gap-3 shrink-0">
               {isEditing && (
                 <button
                   type="button"
@@ -1115,14 +1179,28 @@ export function ObservationFormView({
                   Batal
                 </button>
               )}
-              <button
-                type="submit"
-                disabled={isReadOnly}
-                className="inline-flex items-center gap-2 rounded-lg bg-blue-700 px-5 py-2.5 text-xs font-semibold text-white hover:bg-blue-800 disabled:opacity-50 whitespace-nowrap"
-              >
-                <Save className="w-4 h-4" />
-                {isEditing ? 'Simpan Perubahan & Perbarui Nilai' : 'Simpan Lembar Observasi'}
-              </button>
+              {isEditing && form.isLocked ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setForm((prev) => ({ ...prev, isLocked: false }));
+                    onUnlockSession(form.id);
+                  }}
+                  className="inline-flex items-center gap-2 rounded-lg bg-amber-600 px-5 py-2.5 text-xs font-semibold text-white hover:bg-amber-700 whitespace-nowrap"
+                >
+                  <Unlock className="w-4 h-4" />
+                  Buka Kunci untuk Mengedit
+                </button>
+              ) : (
+                <button
+                  type="submit"
+                  disabled={isReadOnly}
+                  className="inline-flex items-center gap-2 rounded-lg bg-blue-700 px-5 py-2.5 text-xs font-semibold text-white hover:bg-blue-800 disabled:opacity-50 whitespace-nowrap"
+                >
+                  <Save className="w-4 h-4" />
+                  {isEditing ? 'Simpan Perubahan & Perbarui Nilai' : 'Simpan Lembar Observasi'}
+                </button>
+              )}
             </div>
           </div>
         )}
