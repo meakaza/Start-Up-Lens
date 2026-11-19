@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: startup-lens-audit
+    runtime: node
+    plan: free
+    buildCommand: npm install --include=dev && npm run build
+    startCommand: npx tsx server.ts
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      # Opsional: tambahkan GEMINI_API_KEY di dashboard Environment Render jika ingin mengaktifkan ringkasan AI server-side.
