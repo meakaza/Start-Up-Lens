@@ -257,6 +257,44 @@ export function ObservationFormView({
   const handleGeminiDraftNote = async () => {
     setDraftLoading(true);
     setDraftError(null);
+
+    const buildLocalDraft = () => {
+      const cashVar = Number(form.cashVarianceIdr ?? 0);
+      const waste = Number(form.kitchenWasteGrams ?? 0);
+      const drink = Number(form.avgDrinkTicketMin ?? 0);
+      const food = Number(form.avgFoodTicketMin ?? 0);
+      const score = Number(form.weightedScore ?? 0);
+
+      const cashDesc =
+        cashVar === 0
+          ? 'rekonsiliasi kas fisik sesuai 100% (IDR 0)'
+          : `terdapat selisih kas sebesar IDR ${cashVar.toLocaleString('id-ID')} yang perlu ditelusuri ulang pada arsip nota`;
+      const slaOk = drink <= 5 && food <= 10;
+      const slaDesc = slaOk
+        ? `ticket time minuman (${drink} mnt) dan makanan (${food} mnt) berada dalam batas SLA`
+        : `ticket time perlu ditekan (minuman ${drink} mnt, makanan ${food} mnt)`;
+
+      const auditorNote = `Sesi tanggal ${form.date || '-'} (${form.day || '-'}) oleh Shift Manager ${form.shiftManager || '-'} meraih skor tertimbang ${score.toFixed(1)}/100. Secara umum ${cashDesc}, ${slaDesc}, dan total kitchen waste tercatat ${waste} gram.`;
+      const suggestedActionItem =
+        cashVar !== 0
+          ? 'Lakukan audit silang nota belanja dan riwayat void POS bersama Shift Manager sebelum penutupan kasir.'
+          : waste >= 1000
+          ? 'Kalibrasi ulang takaran SRC dan evaluasi proyeksi prep bahan baku pada shift berikutnya.'
+          : 'Pertahankan kedisiplinan mise en place, kecepatan penyajian di bawah SLA, serta kelengkapan CLAYGO penutup.';
+
+      return { auditorNote, suggestedActionItem };
+    };
+
+    const applyDraft = (draft: { auditorNote?: string; suggestedActionItem?: string }) => {
+      setForm((prev) => ({
+        ...prev,
+        auditorSummaryNote: draft.auditorNote || prev.auditorSummaryNote,
+      }));
+      if (draft.suggestedActionItem && !newActionTitle) {
+        setNewActionTitle(draft.suggestedActionItem);
+      }
+    };
+
     try {
       const flaggedItems = form.checklist
         .filter((c) => c.status !== 'sesuai' || c.findingNote.trim().length > 0)
@@ -280,17 +318,15 @@ export function ObservationFormView({
           },
         }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Gagal menyusun draf catatan.');
-      setForm((prev) => ({
-        ...prev,
-        auditorSummaryNote: data.auditorNote || prev.auditorSummaryNote,
-      }));
-      if (data.suggestedActionItem && !newActionTitle) {
-        setNewActionTitle(data.suggestedActionItem);
+      const contentType = res.headers.get('content-type') || '';
+      if (!res.ok || !contentType.includes('application/json')) {
+        applyDraft(buildLocalDraft());
+        return;
       }
-    } catch (err: unknown) {
-      setDraftError(err instanceof Error ? err.message : 'Gagal menyusun draf catatan otomatis.');
+      const data = await res.json();
+      applyDraft(data);
+    } catch {
+      applyDraft(buildLocalDraft());
     } finally {
       setDraftLoading(false);
     }
